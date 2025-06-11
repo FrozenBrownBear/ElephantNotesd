@@ -1,0 +1,12 @@
+[package]
+name = "notes_app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = { version = "0.31", default-features = false, features = ["glow"] }
+egui = { version = "0.31", default-features = false, features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+image = "0.24"
+egui-file-dialog = "0.10"
+pulldown-cmark = "0.9"
