@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Éditeur Markdown in‑place (Bear / Obsidian‑like)</title>
+
+  <!-- =============================
+       Quill + Plugin Markdown
+       ============================= -->
+  <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet" />
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background: #fafafa;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+        Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+    }
+
+    /* conteneur principal */
+    #editor {
+      height: 100%;
+    }
+
+    /* Harmonisation typographique façon Bear / Obsidian */
+    .ql-editor {
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+    .ql-editor h1 {
+      font-size: 2.3rem;
+      margin: 1.2em 0 0.4em;
+    }
+    .ql-editor h2 {
+      font-size: 1.85rem;
+      margin: 1.2em 0 0.4em;
+    }
+    .ql-editor pre {
+      background: #2e3440;
+      color: #eceff4;
+      border-radius: 6px;
+      padding: 1rem;
+    }
+    .ql-editor blockquote {
+      border-left: 4px solid #dadada;
+      padding-left: 1rem;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <!-- Zone unique d’édition/rendu -->
+  <div id="editor"></div>
+
+  <!-- Quill core -->
+  <script src="https://cdn.quilljs.com/1.3.7/quill.js"></script>
+  <!-- Plugin quilljs-markdown (conversion Markdown live) -->
+  <script src="https://cdn.jsdelivr.net/npm/quilljs-markdown@latest/dist/quilljs-markdown.min.js"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // 1. Initialisation de Quill
+      const quill = new Quill('#editor', {
+        theme: 'snow',
+        placeholder: 'Tapez votre Markdown ici…',
+        modules: {
+          toolbar: [
+            [{ header: [1, 2, 3, false] }],
+            ['bold', 'italic', 'strike', 'code'],
+            ['blockquote', 'code-block'],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            ['link', 'image'],
+            ['clean']
+          ]
+        }
+      });
+
+      /*
+       * 2. Activation du plugin Markdown.
+       *    Quilljs‑markdown convertit immédiatement les séquences Markdown :
+       *    - "# " → <h1>
+       *    - "## " → <h2>
+       *    - "**gras**" après la 2ᵉ * devient <strong>
+       *    - "```lang" ouvre un bloc de code, etc.
+       */
+      // eslint-disable-next-line no-undef
+      new QuillMarkdown(quill, { syntax: true });
+    });
+  </script>
+</body>
+</html>
