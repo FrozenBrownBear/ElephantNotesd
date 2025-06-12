@@ -387,4 +387,12 @@ mod tests {
         let job = markdown_job(text, &style);
         assert!(!job.text.contains('\n'));
     }
+
+    #[test]
+    fn heading_layout_preserves_text_order() {
+        let style = egui::Style::default();
+        let text = "# les";
+        let job = markdown_job(text, &style);
+        assert_eq!(job.text, "les");
+    }
 }
