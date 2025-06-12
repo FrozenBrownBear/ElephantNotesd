@@ -1,15 +1,16 @@
 use crate::models::{Folder, Note};
 use crate::ui::sidebar::SideBar;
 use eframe::egui;
-use egui::{Color32, TextEdit, TextureHandle};
+use egui::{
+    text::{LayoutJob, TextFormat},
+    Color32, TextEdit, TextStyle, TextureHandle,
+};
 use egui_file_dialog::FileDialog;
-use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
-use regex::Regex;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher, Config, EventKind};
-use pulldown_cmark::{Parser, html};
+use pulldown_cmark::{html, Event, Parser, Tag};
 
 #[derive(Clone)]
 pub enum Msg {
@@ -18,6 +19,71 @@ pub enum Msg {
     GoBack,
     OpenSettings,
     CreateItem, // bouton +
+}
+
+fn markdown_job(text: &str, style: &egui::Style) -> LayoutJob {
+    let parser = Parser::new(text);
+    let mut job = LayoutJob::default();
+    let mut fmt = TextFormat {
+        font_id: TextStyle::Body.resolve(style),
+        color: style.visuals.text_color(),
+        ..Default::default()
+    };
+    let mut stack: Vec<TextFormat> = Vec::new();
+    let mut bullet_depth = 0usize;
+
+    for ev in parser {
+        match ev {
+            Event::Start(Tag::Heading(level, _, _)) => {
+                stack.push(fmt.clone());
+                let mut id = TextStyle::Heading.resolve(style);
+                let lvl: usize = level as usize;
+                id.size = id.size - ((lvl.saturating_sub(1)) as f32) * 2.0;
+                fmt.font_id = id;
+            }
+            Event::End(Tag::Heading(..)) => {
+                fmt = stack.pop().unwrap_or(fmt);
+                job.append("\n", 0.0, fmt.clone());
+            }
+            Event::Start(Tag::Emphasis) => {
+                stack.push(fmt.clone());
+                fmt.italics = true;
+            }
+            Event::End(Tag::Emphasis) => {
+                fmt = stack.pop().unwrap_or(fmt);
+            }
+            Event::Start(Tag::Strong) => {
+                stack.push(fmt.clone());
+                fmt.color = style.visuals.strong_text_color();
+            }
+            Event::End(Tag::Strong) => {
+                fmt = stack.pop().unwrap_or(fmt);
+            }
+            Event::Start(Tag::List(_)) => {
+                bullet_depth += 1;
+            }
+            Event::End(Tag::List(_)) => {
+                if bullet_depth > 0 { bullet_depth -= 1; }
+                job.append("\n", 0.0, fmt.clone());
+            }
+            Event::Start(Tag::Item) => {
+                for _ in 0..bullet_depth.saturating_sub(1) { job.append("  ", 0.0, fmt.clone()); }
+                job.append("• ", 0.0, fmt.clone());
+            }
+            Event::End(Tag::Item) => {
+                job.append("\n", 0.0, fmt.clone());
+            }
+            Event::Text(t) => job.append(&t, 0.0, fmt.clone()),
+            Event::Code(t) => {
+                let mut code_fmt = fmt.clone();
+                code_fmt.font_id = TextStyle::Monospace.resolve(style);
+                job.append(&t, 0.0, code_fmt);
+            }
+            Event::SoftBreak | Event::HardBreak => job.append("\n", 0.0, fmt.clone()),
+            _ => {}
+        }
+    }
+    job
 }
 
 #[derive(Clone)]
@@ -63,8 +129,6 @@ pub struct NotesApp {
 
     dark_mode: bool,
 
-    md_cache: CommonMarkCache,
-
     watcher: Option<RecommendedWatcher>,
     rx: Option<Receiver<notify::Result<notify::Event>>>,
 }
@@ -83,8 +147,6 @@ impl NotesApp {
             dir_dialog_requested: true,
 
             dark_mode: true,
-
-            md_cache: CommonMarkCache::default(),
 
             watcher: None,
             rx: None,
@@ -230,8 +292,6 @@ impl eframe::App for NotesApp {
 
             // 2) Affichage / édition d’une note
             if let (Some(f_idx), Some(n_idx)) = (self.selected, self.selected_note) {
-                let mut goto: Option<(usize, usize)> = None;
-                let re = Regex::new(r"note://(\d+)/(\d+)").unwrap();
                 {
                     let path = self.folders[f_idx].notes[n_idx].path.clone();
                     self.watch(&path);
@@ -252,39 +312,26 @@ impl eframe::App for NotesApp {
                     ui.add(TextEdit::singleline(&mut note.title).hint_text("Titre de la note"));
                     ui.add_space(8.0);
 
-                    for cap in re.captures_iter(&note.body) {
-                        self.md_cache.add_link_hook(cap.get(0).unwrap().as_str());
-                    }
+                    let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                        let mut job = markdown_job(string, ui.style());
+                        job.wrap.max_width = wrap_width;
+                        ui.fonts(|f| f.layout_job(job))
+                    };
 
-                    ui.columns(2, |cols| {
-                        if cols[0]
-                            .add(TextEdit::multiline(&mut note.body).desired_rows(20).hint_text("Contenu…"))
-                            .changed()
-                        {
-                            let _ = fs::write(&note.path, &note.body);
-                            let parser = Parser::new(&note.body);
-                            let mut html = String::new();
-                            html::push_html(&mut html, parser);
-                            let _ = fs::write(note.path.with_extension("html"), html);
-                        }
-
-                        CommonMarkViewer::new().show(&mut cols[1], &mut self.md_cache, &note.body);
-                    });
-
-                    for cap in re.captures_iter(&note.body).collect::<Vec<_>>() {
-                        let url = cap.get(0).unwrap().as_str();
-                        if self.md_cache.remove_link_hook(url) == Some(true) {
-                            if let (Ok(f), Ok(n)) = (cap[1].parse::<usize>(), cap[2].parse::<usize>()) {
-                                goto = Some((f, n));
-                            }
-                        }
-                    }
-                }
-
-                if let Some((f, n)) = goto {
-                    if self.folders.get(f).and_then(|fol| fol.notes.get(n)).is_some() {
-                        self.selected = Some(f);
-                        self.selected_note = Some(n);
+                    if ui
+                        .add(
+                            TextEdit::multiline(&mut note.body)
+                                .desired_rows(20)
+                                .layouter(&mut layouter)
+                                .hint_text("Contenu…"),
+                        )
+                        .changed()
+                    {
+                        let _ = fs::write(&note.path, &note.body);
+                        let parser = Parser::new(&note.body);
+                        let mut html = String::new();
+                        html::push_html(&mut html, parser);
+                        let _ = fs::write(note.path.with_extension("html"), html);
                     }
                 }
 
