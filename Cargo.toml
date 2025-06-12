@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eframe = { version = "0.31", default-features = false, features = ["glow"] }
+eframe = { version = "0.31", default-features = false, features = ["glow", "wayland", "x11"] }
 egui = { version = "0.31", default-features = false, features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 image = "0.24"
 egui-file-dialog = "0.10"
 pulldown-cmark = "0.9"
+egui_commonmark = "0.20"
+regex = "1"

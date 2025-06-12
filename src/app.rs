@@ -3,6 +3,8 @@ use crate::ui::sidebar::SideBar;
 use eframe::egui;
 use egui::{Color32, TextEdit, TextureHandle};
 use egui_file_dialog::FileDialog;
+use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
+use regex::Regex;
 use std::fs;
 use std::path::PathBuf;
 
@@ -57,6 +59,8 @@ pub struct NotesApp {
     dir_dialog_requested: bool,
 
     dark_mode: bool,
+
+    md_cache: CommonMarkCache,
 }
 
 impl NotesApp {
@@ -73,6 +77,8 @@ impl NotesApp {
             dir_dialog_requested: true,
 
             dark_mode: true,
+
+            md_cache: CommonMarkCache::default(),
         }
     }
 
@@ -197,20 +203,46 @@ impl eframe::App for NotesApp {
 
             // 2) Affichage / édition d’une note
             if let (Some(f_idx), Some(n_idx)) = (self.selected, self.selected_note) {
-                let note = &mut self.folders[f_idx].notes[n_idx];
+                let mut goto: Option<(usize, usize)> = None;
+                let re = Regex::new(r"note://(\d+)/(\d+)").unwrap();
+                {
+                    let note = &mut self.folders[f_idx].notes[n_idx];
 
-                // édition du titre (single-line)
-                ui.add(TextEdit::singleline(&mut note.title).hint_text("Titre de la note"));
-                ui.add_space(8.0);
+                    // édition du titre (single-line)
+                    ui.add(TextEdit::singleline(&mut note.title).hint_text("Titre de la note"));
+                    ui.add_space(8.0);
 
-                // édition du contenu (multiline)
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.add(
-                        TextEdit::multiline(&mut note.body)
-                            .desired_rows(20)
-                            .hint_text("Contenu…"),
-                    );
-                });
+                    for cap in re.captures_iter(&note.body) {
+                        self.md_cache.add_link_hook(cap.get(0).unwrap().as_str());
+                    }
+
+                    ui.columns(2, |cols| {
+                        cols[0].add(
+                            TextEdit::multiline(&mut note.body)
+                                .desired_rows(20)
+                                .hint_text("Contenu…"),
+                        );
+
+                        CommonMarkViewer::new().show(&mut cols[1], &mut self.md_cache, &note.body);
+                    });
+
+                    for cap in re.captures_iter(&note.body).collect::<Vec<_>>() {
+                        let url = cap.get(0).unwrap().as_str();
+                        if self.md_cache.remove_link_hook(url) == Some(true) {
+                            if let (Ok(f), Ok(n)) = (cap[1].parse::<usize>(), cap[2].parse::<usize>()) {
+                                goto = Some((f, n));
+                            }
+                        }
+                    }
+                }
+
+                if let Some((f, n)) = goto {
+                    if self.folders.get(f).and_then(|fol| fol.notes.get(n)).is_some() {
+                        self.selected = Some(f);
+                        self.selected_note = Some(n);
+                    }
+                }
+
                 return;
             }
 
