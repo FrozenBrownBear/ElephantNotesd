@@ -10,8 +10,6 @@ serde = { version = "1", features = ["derive"] }
 image = "0.24"
 egui-file-dialog = "0.10"
 pulldown-cmark = "0.9"
-egui_commonmark = "0.20"
-regex = "1"
 notify = "6"
 
 [[bin]]
