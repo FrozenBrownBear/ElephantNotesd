@@ -12,7 +12,12 @@ egui-file-dialog = "0.10"
 pulldown-cmark = "0.9"
 notify = "6"
 egui_commonmark = "0.20"
+tiny_http = "0.12"
 
 [[bin]]
 name = "md_watch"
 path = "src/bin/md_watch.rs"
+
+[[bin]]
+name = "editor_server"
+path = "src/bin/editor_server.rs"
