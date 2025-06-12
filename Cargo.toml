@@ -11,6 +11,7 @@ image = "0.24"
 egui-file-dialog = "0.10"
 pulldown-cmark = "0.9"
 notify = "6"
+egui_commonmark = "0.20"
 
 [[bin]]
 name = "md_watch"

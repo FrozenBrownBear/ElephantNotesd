@@ -1,6 +1,8 @@
 # Notes App (Rust + egui)
 
 Petit gestionnaire de notes avec barre latérale inspirée de macOS/iOS.
+Le texte Markdown est prévisualisé en **temps réel**, comme dans Bear.app.
+Un panneau à droite montre le rendu mis à jour dès que vous tapez.
 
 ## Installation rapide
 
