@@ -44,7 +44,6 @@ fn markdown_job(text: &str, style: &egui::Style) -> LayoutJob {
             }
             Event::End(Tag::Heading(..)) => {
                 fmt = stack.pop().unwrap_or(fmt);
-                job.append("\n", 0.0, fmt.clone());
             }
             Event::Start(Tag::Emphasis) => {
                 stack.push(fmt.clone());
@@ -374,5 +373,18 @@ impl eframe::App for NotesApp {
             ui.heading("Bienvenue dans Notes App !");
             ui.label("Sélectionne un dossier ou crée-en un nouveau avec le bouton +.");
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn heading_layout_has_no_extra_newline() {
+        let style = egui::Style::default();
+        let text = "# les";
+        let job = markdown_job(text, &style);
+        assert!(!job.text.contains('\n'));
     }
 }
