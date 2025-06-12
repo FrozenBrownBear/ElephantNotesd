@@ -7,6 +7,9 @@ use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use regex::Regex;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::mpsc::{channel, Receiver};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher, Config, EventKind};
+use pulldown_cmark::{Parser, html};
 
 #[derive(Clone)]
 pub enum Msg {
@@ -61,6 +64,9 @@ pub struct NotesApp {
     dark_mode: bool,
 
     md_cache: CommonMarkCache,
+
+    watcher: Option<RecommendedWatcher>,
+    rx: Option<Receiver<notify::Result<notify::Event>>>,
 }
 
 impl NotesApp {
@@ -79,6 +85,21 @@ impl NotesApp {
             dark_mode: true,
 
             md_cache: CommonMarkCache::default(),
+
+            watcher: None,
+            rx: None,
+        }
+    }
+
+    fn watch(&mut self, path: &PathBuf) {
+        if self.watcher.is_none() {
+            let (tx, rx) = channel();
+            let mut watcher = RecommendedWatcher::new(tx, Config::default()).ok();
+            if let Some(w) = watcher.as_mut() {
+                let _ = w.watch(path, RecursiveMode::NonRecursive);
+            }
+            self.watcher = watcher;
+            self.rx = Some(rx);
         }
     }
 
@@ -110,9 +131,15 @@ impl NotesApp {
             Msg::CreateItem => {
                 if let Some(f_idx) = self.selected {
                     let name = format!("Nouvelle note {}", self.folders[f_idx].notes.len() + 1);
-                    self.folders[f_idx]
-                        .notes
-                        .push(Note { title: name.clone(), body: String::new() });
+                    let path = self.folders[f_idx]
+                        .path
+                        .join(format!("note_{}.md", self.folders[f_idx].notes.len() + 1));
+                    let _ = fs::write(&path, "");
+                    self.folders[f_idx].notes.push(Note {
+                        title: name.clone(),
+                        body: String::new(),
+                        path,
+                    });
                     self.selected_note = Some(self.folders[f_idx].notes.len() - 1);
                 } else if let Some(dir) = &self.working_dir {
                     let name = format!("Nouveau dossier {}", self.folders.len() + 1);
@@ -206,7 +233,20 @@ impl eframe::App for NotesApp {
                 let mut goto: Option<(usize, usize)> = None;
                 let re = Regex::new(r"note://(\d+)/(\d+)").unwrap();
                 {
+                    let path = self.folders[f_idx].notes[n_idx].path.clone();
+                    self.watch(&path);
                     let note = &mut self.folders[f_idx].notes[n_idx];
+                    if let Some(rx) = &self.rx {
+                        while let Ok(evt) = rx.try_recv() {
+                            if let Ok(ev) = evt {
+                                if matches!(ev.kind, EventKind::Modify(_)) {
+                                    if let Ok(txt) = fs::read_to_string(&note.path) {
+                                        note.body = txt;
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // édition du titre (single-line)
                     ui.add(TextEdit::singleline(&mut note.title).hint_text("Titre de la note"));
@@ -217,11 +257,16 @@ impl eframe::App for NotesApp {
                     }
 
                     ui.columns(2, |cols| {
-                        cols[0].add(
-                            TextEdit::multiline(&mut note.body)
-                                .desired_rows(20)
-                                .hint_text("Contenu…"),
-                        );
+                        if cols[0]
+                            .add(TextEdit::multiline(&mut note.body).desired_rows(20).hint_text("Contenu…"))
+                            .changed()
+                        {
+                            let _ = fs::write(&note.path, &note.body);
+                            let parser = Parser::new(&note.body);
+                            let mut html = String::new();
+                            html::push_html(&mut html, parser);
+                            let _ = fs::write(note.path.with_extension("html"), html);
+                        }
 
                         CommonMarkViewer::new().show(&mut cols[1], &mut self.md_cache, &note.body);
                     });

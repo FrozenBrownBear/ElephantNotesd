@@ -6,6 +6,7 @@ use std::path::PathBuf;
 pub struct Note {
     pub title: String,
     pub body: String,
+    pub path: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
