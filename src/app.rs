@@ -5,13 +5,14 @@ use egui::{
     text::{LayoutJob, TextFormat},
     Color32, TextEdit, TextStyle, TextureHandle,
 };
+use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use egui_file_dialog::FileDialog;
+use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use pulldown_cmark::{html, Event, Parser, Tag};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
 use std::time::{Duration, Instant};
-use notify::{RecommendedWatcher, RecursiveMode, Watcher, Config, EventKind};
-use pulldown_cmark::{html, Event, Parser, Tag};
 
 #[derive(Clone)]
 pub enum Msg {
@@ -63,11 +64,15 @@ fn markdown_job(text: &str, style: &egui::Style) -> LayoutJob {
                 bullet_depth += 1;
             }
             Event::End(Tag::List(_)) => {
-                if bullet_depth > 0 { bullet_depth -= 1; }
+                if bullet_depth > 0 {
+                    bullet_depth -= 1;
+                }
                 job.append("\n", 0.0, fmt.clone());
             }
             Event::Start(Tag::Item) => {
-                for _ in 0..bullet_depth.saturating_sub(1) { job.append("  ", 0.0, fmt.clone()); }
+                for _ in 0..bullet_depth.saturating_sub(1) {
+                    job.append("  ", 0.0, fmt.clone());
+                }
                 job.append("• ", 0.0, fmt.clone());
             }
             Event::End(Tag::Item) => {
@@ -107,24 +112,28 @@ impl Icons {
             )
         }
         Self {
-            search:   png(include_bytes!("../assets/search.png"),   ctx, "icon_search"),
-            back:     png(include_bytes!("../assets/back.png"),     ctx, "icon_back"),
-            home:     png(include_bytes!("../assets/home.png"),     ctx, "icon_home"),
-            settings: png(include_bytes!("../assets/setting.png"),  ctx, "icon_settings"),
-            add:      png(include_bytes!("../assets/add.png"),      ctx, "icon_add"),
+            search: png(include_bytes!("../assets/search.png"), ctx, "icon_search"),
+            back: png(include_bytes!("../assets/back.png"), ctx, "icon_back"),
+            home: png(include_bytes!("../assets/home.png"), ctx, "icon_home"),
+            settings: png(
+                include_bytes!("../assets/setting.png"),
+                ctx,
+                "icon_settings",
+            ),
+            add: png(include_bytes!("../assets/add.png"), ctx, "icon_add"),
         }
     }
 }
 
 pub struct NotesApp {
-    folders:           Vec<Folder>,
-    selected:          Option<usize>,
-    selected_note:     Option<usize>,
-    show_settings:     bool,
-    icons:             Option<Icons>,
+    folders: Vec<Folder>,
+    selected: Option<usize>,
+    selected_note: Option<usize>,
+    show_settings: bool,
+    icons: Option<Icons>,
 
-    working_dir:          Option<PathBuf>,
-    file_dialog:          FileDialog,
+    working_dir: Option<PathBuf>,
+    file_dialog: FileDialog,
     dir_dialog_requested: bool,
 
     dark_mode: bool,
@@ -133,6 +142,7 @@ pub struct NotesApp {
     rx: Option<Receiver<notify::Result<notify::Event>>>,
     /// Ignore file system events until this time to skip our own writes.
     ignore_fs_events_until: Option<Instant>,
+    md_cache: CommonMarkCache,
 }
 
 impl NotesApp {
@@ -153,6 +163,7 @@ impl NotesApp {
             watcher: None,
             rx: None,
             ignore_fs_events_until: None,
+            md_cache: CommonMarkCache::default(),
         }
     }
 
@@ -266,6 +277,13 @@ impl eframe::App for NotesApp {
             self.handle(msg);
         }
 
+        if let (Some(f_idx), Some(n_idx)) = (self.selected, self.selected_note) {
+            let body = self.folders[f_idx].notes[n_idx].body.clone();
+            egui::SidePanel::right("preview").show(ctx, |ui| {
+                CommonMarkViewer::new().show(ui, &mut self.md_cache, &body);
+            });
+        }
+
         //------------------------------------------------------------------
         // Panneau central
         //------------------------------------------------------------------
@@ -337,7 +355,8 @@ impl eframe::App for NotesApp {
                         .changed()
                     {
                         let _ = fs::write(&note.path, &note.body);
-                        self.ignore_fs_events_until = Some(Instant::now() + Duration::from_millis(500));
+                        self.ignore_fs_events_until =
+                            Some(Instant::now() + Duration::from_millis(500));
                         let parser = Parser::new(&note.body);
                         let mut html = String::new();
                         html::push_html(&mut html, parser);
